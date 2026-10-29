@@ -9,19 +9,39 @@ function Leaves() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // Get logged-in user
+  const currentUser = JSON.parse(
+    localStorage.getItem("user") || "{}"
+  );
+
+  const role = currentUser.role;
+
+  // MongoDB User _id
+  const currentEmployeeId =
+    currentUser.id ||
+    currentUser._id ||
+    currentUser.userId;
+
+  const isEmployee = role === "EMPLOYEE";
+  const isHR =
+    role === "HR" || role === "ADMIN";
+
   const [form, setForm] = useState({
-    employee: "",
+    employee: isEmployee ? currentEmployeeId : "",
     leaveType: "Casual",
     startDate: "",
     endDate: "",
     reason: "",
   });
 
+  // HR/Admin: load all employees
   const fetchEmployees = async () => {
+    if (!isHR) return;
+
     try {
       const response = await api.get("/employees");
 
-      setEmployees(response.data.employees);
+      setEmployees(response.data.employees || []);
     } catch (error) {
       setError(
         error.response?.data?.message ||
@@ -30,13 +50,25 @@ function Leaves() {
     }
   };
 
+  // Load leaves according to role
   const fetchLeaves = async () => {
     try {
       setLoading(true);
+      setError("");
 
-      const response = await api.get("/leaves");
+      let response;
 
-      setLeaves(response.data.leaves);
+      if (isEmployee) {
+        // Employee sees only their own leaves
+        response = await api.get(
+          `/leaves/employee/${currentEmployeeId}`
+        );
+      } else {
+        // HR/Admin sees all leaves
+        response = await api.get("/leaves");
+      }
+
+      setLeaves(response.data.leaves || []);
     } catch (error) {
       setError(
         error.response?.data?.message ||
@@ -63,18 +95,26 @@ function Leaves() {
     e.preventDefault();
 
     try {
+      const employeeId = isEmployee
+        ? currentEmployeeId
+        : form.employee;
+
       await api.post("/leaves", {
-        employee: form.employee,
+        employee: employeeId,
         leaveType: form.leaveType,
         startDate: form.startDate,
         endDate: form.endDate,
         reason: form.reason,
       });
 
-      alert("Leave application created successfully");
+      alert(
+        "Leave application submitted successfully"
+      );
 
       setForm({
-        employee: "",
+        employee: isEmployee
+          ? currentEmployeeId
+          : "",
         leaveType: "Casual",
         startDate: "",
         endDate: "",
@@ -90,14 +130,19 @@ function Leaves() {
     }
   };
 
-  const updateLeaveStatus = async (id, status) => {
+  const updateLeaveStatus = async (
+    id,
+    status
+  ) => {
     try {
       await api.patch(
         `/leaves/${id}/status`,
         { status }
       );
 
-      alert(`Leave ${status.toLowerCase()}`);
+      alert(
+        `Leave ${status.toLowerCase()} successfully`
+      );
 
       fetchLeaves();
     } catch (error) {
@@ -123,31 +168,49 @@ function Leaves() {
       <h2>Apply Leave</h2>
 
       <form onSubmit={handleSubmit}>
-        <div>
-          <label>Employee</label>
-          <br />
+        {/* Employee Selection */}
 
-          <select
-            name="employee"
-            value={form.employee}
-            onChange={handleChange}
-            required
-          >
-            <option value="">
-              Select Employee
-            </option>
+        {isHR ? (
+          <div>
+            <label>Employee</label>
+            <br />
 
-            {employees.map((employee) => (
-              <option
-                key={employee._id}
-                value={employee._id}
-              >
-                {employee.employeeId} -{" "}
-                {employee.name}
+            <select
+              name="employee"
+              value={form.employee}
+              onChange={handleChange}
+              required
+            >
+              <option value="">
+                Select Employee
               </option>
-            ))}
-          </select>
-        </div>
+
+              {employees.map((employee) => (
+                <option
+                  key={employee._id}
+                  value={employee._id}
+                >
+                  {employee.employeeId} -{" "}
+                  {employee.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div>
+            <label>Employee</label>
+            <br />
+
+            <input
+              type="text"
+              value={
+                currentUser.name ||
+                "Logged-in Employee"
+              }
+              disabled
+            />
+          </div>
+        )}
 
         <br />
 
@@ -238,7 +301,11 @@ function Leaves() {
 
       {/* Leave List */}
 
-      <h2>Leave Applications</h2>
+      <h2>
+        {isEmployee
+          ? "My Leave Applications"
+          : "Leave Applications"}
+      </h2>
 
       {loading ? (
         <p>Loading leaves...</p>
@@ -255,7 +322,8 @@ function Leaves() {
               <th>End Date</th>
               <th>Reason</th>
               <th>Status</th>
-              <th>Action</th>
+
+              {isHR && <th>Action</th>}
             </tr>
           </thead>
 
@@ -290,42 +358,42 @@ function Leaves() {
 
                 <td>{leave.status}</td>
 
-                <td>
-                  {leave.status === "Pending" && (
-                    <>
-                      <button
-                        onClick={() =>
-                          updateLeaveStatus(
-                            leave._id,
-                            "Approved"
-                          )
-                        }
-                      >
-                        Approve
-                      </button>
+                {isHR && (
+                  <td>
+                    {leave.status === "Pending" ? (
+                      <>
+                        <button
+                          onClick={() =>
+                            updateLeaveStatus(
+                              leave._id,
+                              "Approved"
+                            )
+                          }
+                        >
+                          Approve
+                        </button>
 
-                      <button
-                        onClick={() =>
-                          updateLeaveStatus(
-                            leave._id,
-                            "Rejected"
-                          )
-                        }
-                        style={{
-                          marginLeft: "5px",
-                        }}
-                      >
-                        Reject
-                      </button>
-                    </>
-                  )}
-
-                  {leave.status !== "Pending" && (
-                    <span>
-                      Already reviewed
-                    </span>
-                  )}
-                </td>
+                        <button
+                          onClick={() =>
+                            updateLeaveStatus(
+                              leave._id,
+                              "Rejected"
+                            )
+                          }
+                          style={{
+                            marginLeft: "5px",
+                          }}
+                        >
+                          Reject
+                        </button>
+                      </>
+                    ) : (
+                      <span>
+                        Already reviewed
+                      </span>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
