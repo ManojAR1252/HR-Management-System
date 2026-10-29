@@ -18,7 +18,7 @@ const router = express.Router();
 router.post(
   "/",
   protect,
-  authorize("HR", "ADMIN"),
+  authorize("EMPLOYEE","HR", "ADMIN"),
   applyLeave
 );
 
