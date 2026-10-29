@@ -1,7 +1,24 @@
+const mongoose = require("mongoose");
+
 const Leave = require("../models/Leave");
 const User = require("../models/User");
 
+// ======================================
+// Get Logged-in User ID
+// ======================================
+
+const getLoggedInUserId = (req) => {
+  return (
+    req.user?.userId ||
+    req.user?.id ||
+    req.user?._id
+  );
+};
+
+// ======================================
 // Apply Leave
+// ======================================
+
 const applyLeave = async (req, res) => {
   try {
     const {
@@ -25,6 +42,25 @@ const applyLeave = async (req, res) => {
       });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(employee)) {
+      return res.status(400).json({
+        message: "Invalid employee ID",
+      });
+    }
+
+    const loggedInUserId = getLoggedInUserId(req);
+
+    // Employee can apply leave only for themselves
+    if (
+      req.user?.role === "EMPLOYEE" &&
+      String(loggedInUserId) !== String(employee)
+    ) {
+      return res.status(403).json({
+        message:
+          "Employees can apply leave only for themselves",
+      });
+    }
+
     const existingEmployee = await User.findOne({
       _id: employee,
       role: "EMPLOYEE",
@@ -38,7 +74,8 @@ const applyLeave = async (req, res) => {
 
     if (new Date(startDate) > new Date(endDate)) {
       return res.status(400).json({
-        message: "Start date cannot be after end date",
+        message:
+          "Start date cannot be after end date",
       });
     }
 
@@ -50,27 +87,35 @@ const applyLeave = async (req, res) => {
       reason,
     });
 
-    const populatedLeave = await Leave.findById(
-      leave._id
-    ).populate(
-      "employee",
-      "name email employeeId position"
-    );
+    const populatedLeave =
+      await Leave.findById(leave._id)
+        .populate(
+          "employee",
+          "name email employeeId position"
+        );
 
-    res.status(201).json({
-      message: "Leave application submitted successfully",
+    return res.status(201).json({
+      message:
+        "Leave application submitted successfully",
       leave: populatedLeave,
     });
   } catch (error) {
-    console.error("Apply leave error:", error);
+    console.error(
+      "Apply leave error:",
+      error
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Server error",
     });
   }
 };
 
+// ======================================
 // Get All Leaves
+// HR/Admin only
+// ======================================
+
 const getLeaves = async (req, res) => {
   try {
     const leaves = await Leave.find()
@@ -84,24 +129,60 @@ const getLeaves = async (req, res) => {
       )
       .sort({ createdAt: -1 });
 
-    res.status(200).json({
+    return res.status(200).json({
       count: leaves.length,
       leaves,
     });
   } catch (error) {
-    console.error("Get leaves error:", error);
+    console.error(
+      "Get leaves error:",
+      error
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Server error",
     });
   }
 };
 
+// ======================================
 // Get Employee Leaves
-const getEmployeeLeaves = async (req, res) => {
+// ======================================
+
+const getEmployeeLeaves = async (
+  req,
+  res
+) => {
   try {
+    const { employeeId } = req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(
+        employeeId
+      )
+    ) {
+      return res.status(400).json({
+        message: "Invalid employee ID",
+      });
+    }
+
+    const loggedInUserId =
+      getLoggedInUserId(req);
+
+    // Employee can see ONLY their own leaves
+    if (
+      req.user?.role === "EMPLOYEE" &&
+      String(loggedInUserId) !==
+        String(employeeId)
+    ) {
+      return res.status(403).json({
+        message:
+          "Employees can view only their own leaves",
+      });
+    }
+
     const leaves = await Leave.find({
-      employee: req.params.employeeId,
+      employee: employeeId,
     })
       .populate(
         "employee",
@@ -113,70 +194,107 @@ const getEmployeeLeaves = async (req, res) => {
       )
       .sort({ startDate: -1 });
 
-    res.status(200).json({
+    return res.status(200).json({
       count: leaves.length,
       leaves,
     });
   } catch (error) {
-    console.error("Get employee leaves error:", error);
+    console.error(
+      "Get employee leaves error:",
+      error
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Server error",
     });
   }
 };
 
-// Update Leave Status
-const updateLeaveStatus = async (req, res) => {
-  try {
-    const { status, reviewComment } = req.body;
+// ======================================
+// Approve / Reject Leave
+// HR/Admin only
+// ======================================
 
-    if (!["Approved", "Rejected"].includes(status)) {
+const updateLeaveStatus = async (
+  req,
+  res
+) => {
+  try {
+    const { status, reviewComment } =
+      req.body;
+
+    if (
+      !["Approved", "Rejected"].includes(
+        status
+      )
+    ) {
       return res.status(400).json({
-        message: "Status must be Approved or Rejected",
+        message:
+          "Status must be Approved or Rejected",
       });
     }
 
-    const leave = await Leave.findById(req.params.id);
+    if (
+      !mongoose.Types.ObjectId.isValid(
+        req.params.id
+      )
+    ) {
+      return res.status(400).json({
+        message: "Invalid leave ID",
+      });
+    }
+
+    const leave = await Leave.findById(
+      req.params.id
+    );
 
     if (!leave) {
       return res.status(404).json({
-        message: "Leave application not found",
+        message:
+          "Leave application not found",
       });
     }
 
     if (leave.status !== "Pending") {
       return res.status(400).json({
-        message: "Only pending leave applications can be reviewed",
+        message:
+          "Only pending leave applications can be reviewed",
       });
     }
 
     leave.status = status;
-    leave.reviewedBy = req.user.userId;
-    leave.reviewComment = reviewComment || "";
+    leave.reviewedBy =
+      getLoggedInUserId(req);
+    leave.reviewComment =
+      reviewComment || "";
 
-    const updatedLeave = await leave.save();
+    const updatedLeave =
+      await leave.save();
 
-    const populatedLeave = await Leave.findById(
-      updatedLeave._id
-    )
-      .populate(
-        "employee",
-        "name email employeeId position"
+    const populatedLeave =
+      await Leave.findById(
+        updatedLeave._id
       )
-      .populate(
-        "reviewedBy",
-        "name email role"
-      );
+        .populate(
+          "employee",
+          "name email employeeId position"
+        )
+        .populate(
+          "reviewedBy",
+          "name email role"
+        );
 
-    res.status(200).json({
+    return res.status(200).json({
       message: `Leave ${status.toLowerCase()} successfully`,
       leave: populatedLeave,
     });
   } catch (error) {
-    console.error("Update leave status error:", error);
+    console.error(
+      "Update leave status error:",
+      error
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Server error",
     });
   }
