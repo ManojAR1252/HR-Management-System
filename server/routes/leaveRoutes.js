@@ -34,7 +34,7 @@ router.get(
 router.get(
   "/employee/:employeeId",
   protect,
-  authorize("HR", "ADMIN"),
+  authorize("EMPLOYEE","HR", "ADMIN"),
   getEmployeeLeaves
 );
 
