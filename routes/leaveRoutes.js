@@ -14,15 +14,23 @@ const {
 
 const router = express.Router();
 
-// Apply leave
+// ======================================
+// Apply Leave
+// EMPLOYEE, HR, ADMIN
+// ======================================
+
 router.post(
   "/",
   protect,
-  authorize("HR", "ADMIN"),
+  authorize("EMPLOYEE", "HR", "ADMIN"),
   applyLeave
 );
 
-// Get all leaves
+// ======================================
+// Get All Leaves
+// HR/Admin only
+// ======================================
+
 router.get(
   "/",
   protect,
@@ -30,15 +38,23 @@ router.get(
   getLeaves
 );
 
-// Get employee leave history
+// ======================================
+// Get Employee Leave History
+// EMPLOYEE, HR, ADMIN
+// ======================================
+
 router.get(
   "/employee/:employeeId",
   protect,
-  authorize("HR", "ADMIN"),
+  authorize("EMPLOYEE", "HR", "ADMIN"),
   getEmployeeLeaves
 );
 
-// Approve / Reject leave
+// ======================================
+// Approve / Reject Leave
+// HR/Admin only
+// ======================================
+
 router.patch(
   "/:id/status",
   protect,
